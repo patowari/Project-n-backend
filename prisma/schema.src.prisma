@@ -1,0 +1,970 @@
+// Source schema in camelCase. `npm run schema:build` (scripts/build-schema.mjs)
+// adds snake_case @map/@@map and writes prisma/schema.prisma, which is what
+// Prisma reads. Edit THIS file, not the generated one.
+//
+// Tenant rule: every tenant-owned table carries workspaceId, exposes
+// @@unique([workspaceId, id]) and points at its tenant parents with a
+// COMPOSITE foreign key (workspaceId, parentId). A row can therefore never
+// reference a parent in another workspace, whatever the application does.
+// Row Level Security (migration 0002) is the second line of defence.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Migrations run with the OWNER role. Runtime clients pass their own URL.
+  url      = env("DATABASE_MIGRATION_URL")
+}
+
+/* ------------------------------------------------------------------ */
+/* Enums                                                               */
+/* ------------------------------------------------------------------ */
+
+enum WorkspaceType {
+  institution
+  supervision
+}
+
+enum WorkspaceStatus {
+  pending_approval
+  active
+  suspended
+}
+
+enum WorkspaceRole {
+  institution_admin
+  dean
+  head
+  supervision_owner
+  supervisor
+  student
+}
+
+enum ScopeType {
+  faculty
+  department
+}
+
+enum MembershipStatus {
+  invited
+  active
+  deactivated
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  declined
+  revoked
+}
+
+enum UserStatus {
+  active
+  deactivated
+}
+
+enum AuthTokenKind {
+  verify_email
+  reset_password
+  change_email
+}
+
+enum ProjectRole {
+  lead
+  co_supervisor
+  student
+}
+
+enum ProjectStatus {
+  active
+  on_hold
+  completed
+  cancelled
+}
+
+enum ProjectHealth {
+  on_track
+  at_risk
+  overdue
+  awaiting_review
+  completed
+}
+
+enum PhaseStatus {
+  locked
+  open
+  submitted
+  changes_requested
+  approved
+}
+
+enum UnlockRule {
+  on_submit
+  on_approval
+}
+
+enum SubmissionMode {
+  leader_only
+  any_member
+}
+
+enum SubmissionStatus {
+  submitted
+  changes_requested
+  approved
+}
+
+enum ReviewDecision {
+  approved
+  changes_requested
+}
+
+enum AiStatus {
+  disabled
+  queued
+  processing
+  ready
+  failed
+  skipped_budget
+}
+
+enum RevocationScope {
+  project
+  faculty
+}
+
+enum OverrideKind {
+  approve_phase
+  reopen_phase
+  move_deadline
+  put_on_hold
+  resume
+  complete
+  cancel
+}
+
+enum ExtensionStatus {
+  pending
+  approved
+  rejected
+}
+
+enum CommentTargetType {
+  project
+  phase
+  submission
+}
+
+enum TimeLogKind {
+  hours
+  meeting
+}
+
+enum ActivityCategory {
+  submissions
+  reviews
+  ai
+  timeline
+  project
+  people
+  governance
+  drive
+  collaboration
+  time
+}
+
+enum ActivityVisibility {
+  all
+  supervisors
+  leadership
+}
+
+enum JobStatus {
+  queued
+  running
+  succeeded
+  failed
+  dead
+}
+
+enum DriveStatus {
+  connected
+  disconnected
+  error
+}
+
+enum IdempotencyState {
+  in_progress
+  completed
+}
+
+/* ------------------------------------------------------------------ */
+/* Identity (global, not tenant-owned)                                 */
+/* ------------------------------------------------------------------ */
+
+model User {
+  id                  String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Always stored lower-case (CHECK constraint in migration 0002).
+  email               String     @unique
+  name                String
+  passwordHash        String?
+  emailVerifiedAt     DateTime?  @db.Timestamptz(6)
+  isPlatformAdmin     Boolean    @default(false)
+  status              UserStatus @default(active)
+  avatarUrl           String?
+  title               String     @default("")
+  phone               String     @default("")
+  /// bio, research interests, office hours, batch (free-form profile)
+  profile             Json       @default("{}")
+  notificationPrefs   Json       @default("{}")
+  preferences         Json       @default("{}")
+  supervisionDefaults Json       @default("{}")
+  failedLoginCount    Int        @default(0)
+  lockedUntil         DateTime?  @db.Timestamptz(6)
+  passwordChangedAt   DateTime?  @db.Timestamptz(6)
+  defaultWorkspaceId  String?    @db.Uuid
+  deletionRequestedAt DateTime?  @db.Timestamptz(6)
+  deletionReason      String?
+  createdAt           DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime   @updatedAt @db.Timestamptz(6)
+
+  sessions            Session[]
+  authTokens          AuthToken[]
+  memberships         Membership[]
+  driveConnection     GoogleDriveConnection?
+  notifications       Notification[]
+}
+
+/// One row per signed-in device. Refresh tokens rotate inside a session.
+model Session {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String    @db.Uuid
+  deviceLabel   String    @default("Unknown device")
+  ip            String?
+  userAgent     String?
+  location      String    @default("")
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  lastSeenAt    DateTime  @default(now()) @db.Timestamptz(6)
+  revokedAt     DateTime? @db.Timestamptz(6)
+  revokedReason String?
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+}
+
+model RefreshToken {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId    String    @db.Uuid
+  /// SHA-256 of the opaque token. The token itself is never stored.
+  tokenHash    String    @unique
+  issuedAt     DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt    DateTime  @db.Timestamptz(6)
+  /// Set exactly once, by an atomic UPDATE ... WHERE used_at IS NULL.
+  usedAt       DateTime? @db.Timestamptz(6)
+  replacedById String?   @db.Uuid
+
+  session      Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+model AuthToken {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String        @db.Uuid
+  kind      AuthTokenKind
+  tokenHash String        @unique
+  payload   Json?
+  expiresAt DateTime      @db.Timestamptz(6)
+  usedAt    DateTime?     @db.Timestamptz(6)
+  createdAt DateTime      @default(now()) @db.Timestamptz(6)
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind])
+}
+
+/* ------------------------------------------------------------------ */
+/* Platform                                                            */
+/* ------------------------------------------------------------------ */
+
+model Plan {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key                String   @unique
+  name               String
+  aiMonthlyBudgetUsd Decimal  @default(0) @db.Decimal(10, 2)
+  maxUsers           Int?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  workspaces         Workspace[]
+}
+
+model Workspace {
+  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  shortName String          @default("")
+  type      WorkspaceType
+  status    WorkspaceStatus @default(active)
+  planId    String?         @db.Uuid
+  timeZone  String          @default("Asia/Dhaka")
+  logoUrl   String?
+  createdAt DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime        @updatedAt @db.Timestamptz(6)
+
+  plan        Plan?              @relation(fields: [planId], references: [id])
+  settings    WorkspaceSettings?
+  faculties   Faculty[]
+  departments Department[]
+  memberships Membership[]
+  invites     Invite[]
+  projects    Project[]
+}
+
+model WorkspaceSettings {
+  workspaceId                  String   @id @db.Uuid
+  newSupervisorsCanApprove     Boolean  @default(false)
+  supervisorsCanCreateProjects Boolean  @default(true)
+  aiEnabled                    Boolean  @default(true)
+  /// 0 pauses AI for the workspace. New workspaces start with a small budget.
+  aiMonthlyBudgetUsd           Decimal  @default(5) @db.Decimal(10, 2)
+  allowedFileTypes             String[] @default(["pdf", "docx", "pptx", "xlsx", "zip", "png", "jpg", "txt"])
+  maxFileMb                    Int      @default(50)
+  maxFilesPerSubmission        Int      @default(10)
+  atRiskAfterDays              Int      @default(14)
+  awaitingReviewAfterDays      Int      @default(3)
+  escalateOverdueAfterDays     Int      @default(3)
+  defaultSubmissionMode        SubmissionMode @default(leader_only)
+  defaultUnlockRule            UnlockRule     @default(on_submit)
+  term                         Json     @default("{}")
+  updatedAt                    DateTime @updatedAt @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+/* ------------------------------------------------------------------ */
+/* Tenancy                                                             */
+/* ------------------------------------------------------------------ */
+
+model Faculty {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @db.Uuid
+  name        String
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  departments Department[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, name])
+}
+
+model Department {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @db.Uuid
+  facultyId   String   @db.Uuid
+  name        String
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  faculty     Faculty   @relation(fields: [workspaceId, facultyId], references: [workspaceId, id], onDelete: Restrict)
+  memberships Membership[]
+  projects    Project[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, facultyId, name])
+  @@index([workspaceId, facultyId])
+}
+
+model Membership {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String           @db.Uuid
+  userId       String           @db.Uuid
+  status       MembershipStatus @default(active)
+  /// Approval permission set by the Institution Admin (architecture 5.4)
+  canApprove   Boolean          @default(false)
+  departmentId String?          @db.Uuid
+  studentCode  String?
+  joinedAt     DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @db.Timestamptz(6)
+
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department?      @relation(fields: [workspaceId, departmentId], references: [workspaceId, id], onDelete: Restrict)
+  roles        MembershipRole[]
+  projectLinks ProjectMember[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@index([workspaceId, departmentId])
+}
+
+model MembershipRole {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String        @db.Uuid
+  membershipId String        @db.Uuid
+  role         WorkspaceRole
+  scopeType    ScopeType?
+  /// Faculty id (dean) or department id (head). Null for workspace-wide roles.
+  scopeId      String?       @db.Uuid
+  createdAt    DateTime      @default(now()) @db.Timestamptz(6)
+
+  membership   Membership    @relation(fields: [workspaceId, membershipId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, membershipId])
+  @@index([workspaceId, role, scopeId])
+}
+
+model Invite {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String        @db.Uuid
+  email        String
+  name         String        @default("")
+  role         WorkspaceRole
+  scopeType    ScopeType?
+  scopeId      String?       @db.Uuid
+  departmentId String?       @db.Uuid
+  studentCode  String?
+  canApprove   Boolean?
+  tokenHash    String        @unique
+  status       InviteStatus  @default(pending)
+  invitedById  String        @db.Uuid
+  expiresAt    DateTime      @db.Timestamptz(6)
+  acceptedAt   DateTime?     @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(6)
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, email, status])
+}
+
+/* ------------------------------------------------------------------ */
+/* Projects                                                            */
+/* ------------------------------------------------------------------ */
+
+model Project {
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId           String         @db.Uuid
+  title                 String
+  description           String         @default("")
+  departmentId          String?        @db.Uuid
+  status                ProjectStatus  @default(active)
+  health                ProjectHealth  @default(on_track)
+  healthReason          String?
+  healthUpdatedAt       DateTime?      @db.Timestamptz(6)
+  unlockRule            UnlockRule     @default(on_submit)
+  submissionMode        SubmissionMode @default(leader_only)
+  aiStudentFeedback     Boolean        @default(true)
+  aiSupervisorSummary   Boolean        @default(true)
+  startDate             DateTime       @db.Date
+  /// Set by succession when the Lead leaves and nobody can take over.
+  needsSupervisor       Boolean        @default(false)
+  driveFolderId         String?
+  driveFolderUrl        String?
+  /// Optimistic-lock token for edits (If-Match).
+  version               Int            @default(1)
+  createdById           String         @db.Uuid
+  createdAt             DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
+  deletedAt             DateTime?      @db.Timestamptz(6)
+
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  department  Department?    @relation(fields: [workspaceId, departmentId], references: [workspaceId, id], onDelete: Restrict)
+  members     ProjectMember[]
+  phases      Phase[]
+  submissions Submission[]
+  comments    Comment[]
+  timeLogs    TimeLog[]
+  overrides   Override[]
+  revocations ApprovalRevocation[]
+  extensions  ExtensionRequest[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status, health])
+  @@index([workspaceId, departmentId])
+  @@index([workspaceId, createdById])
+  @@index([workspaceId, createdAt(sort: Desc)])
+}
+
+model ProjectMember {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String      @db.Uuid
+  projectId   String      @db.Uuid
+  userId      String      @db.Uuid
+  role        ProjectRole
+  isGroupLeader Boolean   @default(false)
+  isSuccessor Boolean     @default(false)
+  joinedAt    DateTime    @default(now()) @db.Timestamptz(6)
+  leftAt      DateTime?   @db.Timestamptz(6)
+  leftReason  String?
+
+  project     Project     @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+  /// The person must hold a membership in the SAME workspace.
+  membership  Membership  @relation(fields: [workspaceId, userId], references: [workspaceId, userId], onDelete: Restrict)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, projectId])
+  @@index([workspaceId, userId])
+  /// Workers (BYPASSRLS) look members up by project / person without a workspace filter.
+  @@index([projectId])
+  @@index([userId])
+}
+
+model PhaseTemplate {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @db.Uuid
+  name        String
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  items       PhaseTemplateItem[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, name])
+}
+
+model PhaseTemplateItem {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String @db.Uuid
+  templateId   String @db.Uuid
+  position     Int
+  name         String
+  durationDays Int
+
+  template     PhaseTemplate @relation(fields: [workspaceId, templateId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+}
+
+model Phase {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String      @db.Uuid
+  projectId     String      @db.Uuid
+  position      Int
+  name          String
+  description   String      @default("")
+  status        PhaseStatus @default(locked)
+  dueDate       DateTime?   @db.Date
+  latestVersion Int         @default(0)
+  approvedAt    DateTime?   @db.Timestamptz(6)
+  approvedById  String?     @db.Uuid
+  approvedByRole String?
+  createdAt     DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(6)
+
+  project       Project     @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+  requirements  PhaseRequirement[]
+  resources     PhaseResource[]
+  draftFiles    DraftFile[]
+  submissions   Submission[]
+  extensions    ExtensionRequest[]
+
+  @@unique([workspaceId, id])
+  @@unique([projectId, position])
+  @@index([workspaceId, dueDate])
+}
+
+model PhaseRequirement {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String  @db.Uuid
+  phaseId     String  @db.Uuid
+  name        String
+  optional    Boolean @default(false)
+  position    Int     @default(0)
+
+  phase       Phase   @relation(fields: [workspaceId, phaseId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, phaseId])
+}
+
+model PhaseResource {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @db.Uuid
+  phaseId     String   @db.Uuid
+  kind        String
+  name        String
+  url         String
+  sizeKb      Int?
+  addedById   String   @db.Uuid
+  addedAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  phase       Phase    @relation(fields: [workspaceId, phaseId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, phaseId])
+}
+
+/// Files the group has gathered for the NEXT version of a phase.
+model DraftFile {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String    @db.Uuid
+  projectId     String    @db.Uuid
+  phaseId       String    @db.Uuid
+  requirementId String?   @db.Uuid
+  name          String
+  mimeType      String
+  sizeBytes     BigInt
+  driveFileId   String
+  driveUrl      String
+  md5           String?
+  uploadedById  String    @db.Uuid
+  uploadedAt    DateTime  @default(now()) @db.Timestamptz(6)
+
+  phase         Phase     @relation(fields: [workspaceId, phaseId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([phaseId, driveFileId])
+  @@index([workspaceId, phaseId])
+  @@index([projectId, uploadedAt(sort: Desc)])
+}
+
+/// Immutable once created. A new version is a new row.
+model Submission {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId    String           @db.Uuid
+  projectId      String           @db.Uuid
+  phaseId        String           @db.Uuid
+  version        Int
+  status         SubmissionStatus @default(submitted)
+  submittedById  String           @db.Uuid
+  submittedAt    DateTime         @default(now()) @db.Timestamptz(6)
+  note           String           @default("")
+  idempotencyKey String?
+  aiStatus       AiStatus         @default(disabled)
+  aiReleased     Boolean          @default(false)
+
+  project        Project          @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+  phase          Phase            @relation(fields: [workspaceId, phaseId], references: [workspaceId, id], onDelete: Cascade)
+  files          SubmissionFile[]
+  reviews        Review[]
+  aiReview       AiReview?
+
+  @@unique([workspaceId, id])
+  @@unique([phaseId, version])
+  @@unique([workspaceId, submittedById, idempotencyKey])
+  @@index([workspaceId, projectId, submittedAt(sort: Desc)])
+  @@index([workspaceId, status, submittedAt])
+  @@index([projectId, submittedAt(sort: Desc)])
+}
+
+model SubmissionFile {
+  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String     @db.Uuid
+  /// Denormalised so the RLS policy needs no nested policy lookup.
+  projectId     String     @db.Uuid
+  submissionId  String     @db.Uuid
+  requirementId String?    @db.Uuid
+  name          String
+  mimeType      String
+  sizeBytes     BigInt
+  driveFileId   String
+  driveUrl      String
+  md5           String?
+  uploadedById  String     @db.Uuid
+  uploadedAt    DateTime   @default(now()) @db.Timestamptz(6)
+  missingInDrive Boolean   @default(false)
+
+  submission    Submission @relation(fields: [workspaceId, submissionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, submissionId])
+  @@index([projectId])
+}
+
+/// One routine decision per version plus at most one Dean override decision
+/// (partial unique indexes in migration 0002). Append-only.
+model Review {
+  id           String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String         @db.Uuid
+  projectId    String         @db.Uuid
+  submissionId String         @db.Uuid
+  decision     ReviewDecision
+  comment      String         @default("")
+  reviewerId   String         @db.Uuid
+  actingRole   String
+  isOverride   Boolean        @default(false)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(6)
+
+  submission   Submission     @relation(fields: [workspaceId, submissionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, submissionId])
+  @@index([workspaceId, projectId, createdAt])
+  @@index([submissionId])
+}
+
+model AiReview {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId       String    @db.Uuid
+  projectId         String    @db.Uuid
+  submissionId      String    @db.Uuid
+  studentFeedback   Json?
+  supervisorSummary Json?
+  model             String?
+  error             String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+
+  submission        Submission @relation(fields: [workspaceId, submissionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, submissionId])
+}
+
+model AiUsage {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String   @db.Uuid
+  projectId    String?  @db.Uuid
+  submissionId String?  @db.Uuid
+  model        String
+  tokensIn     Int      @default(0)
+  tokensOut    Int      @default(0)
+  costUsd      Decimal  @default(0) @db.Decimal(12, 6)
+  /// One usage row per job execution: makes metering idempotent.
+  jobId        String   @unique @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([workspaceId, createdAt])
+}
+
+model ApprovalRevocation {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String          @db.Uuid
+  userId       String          @db.Uuid
+  scope        RevocationScope
+  projectId    String?         @db.Uuid
+  facultyId    String?         @db.Uuid
+  reason       String
+  revokedById  String          @db.Uuid
+  revokedAt    DateTime        @default(now()) @db.Timestamptz(6)
+  restoredAt   DateTime?       @db.Timestamptz(6)
+  restoredById String?         @db.Uuid
+  restoreReason String?
+
+  project      Project?        @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, userId, restoredAt])
+}
+
+model Override {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String       @db.Uuid
+  projectId   String       @db.Uuid
+  phaseId     String?      @db.Uuid
+  kind        OverrideKind
+  reason      String
+  actorId     String       @db.Uuid
+  actorRole   String
+  /// True when the actor is also a supervisor on this project (flagged in reports).
+  actorIsSupervisor Boolean @default(false)
+  before      Json?
+  after       Json?
+  createdAt   DateTime     @default(now()) @db.Timestamptz(6)
+
+  project     Project      @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, projectId, createdAt])
+}
+
+model ExtensionRequest {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String          @db.Uuid
+  projectId     String          @db.Uuid
+  phaseId       String          @db.Uuid
+  requestedById String          @db.Uuid
+  until         DateTime        @db.Date
+  reason        String
+  status        ExtensionStatus @default(pending)
+  decidedById   String?         @db.Uuid
+  decidedAt     DateTime?       @db.Timestamptz(6)
+  decisionNote  String?
+  createdAt     DateTime        @default(now()) @db.Timestamptz(6)
+
+  project       Project         @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+  phase         Phase           @relation(fields: [workspaceId, phaseId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, projectId, status])
+}
+
+model Comment {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String            @db.Uuid
+  projectId       String            @db.Uuid
+  authorId        String            @db.Uuid
+  actingRole      String
+  body            String
+  targetType      CommentTargetType
+  targetId        String            @db.Uuid
+  targetLabel     String            @default("")
+  parentId        String?           @db.Uuid
+  /// Private discussion: hidden from students (RLS + API).
+  supervisorsOnly Boolean           @default(false)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(6)
+  deletedAt       DateTime?         @db.Timestamptz(6)
+
+  project         Project           @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+  mentions        CommentMention[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, projectId, createdAt(sort: Desc)])
+  @@index([workspaceId, targetType, targetId, createdAt])
+}
+
+model CommentMention {
+  workspaceId String  @db.Uuid
+  commentId   String  @db.Uuid
+  userId      String  @db.Uuid
+
+  comment     Comment @relation(fields: [workspaceId, commentId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+}
+
+model TimeLog {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String      @db.Uuid
+  projectId   String      @db.Uuid
+  userId      String      @db.Uuid
+  kind        TimeLogKind
+  hours       Decimal     @db.Decimal(5, 2)
+  note        String      @default("")
+  date        DateTime    @db.Date
+  createdAt   DateTime    @default(now()) @db.Timestamptz(6)
+
+  project     Project     @relation(fields: [workspaceId, projectId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, projectId, date(sort: Desc)])
+  @@index([projectId, createdAt(sort: Desc)])
+}
+
+model Notification {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String?   @db.Uuid
+  userId      String    @db.Uuid
+  kind        String
+  title       String
+  body        String    @default("")
+  link        String?
+  data        Json?
+  readAt      DateTime? @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt(sort: Desc)])
+}
+
+/// Append-only (the app role has INSERT and SELECT only, migration 0002).
+model ActivityLog {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String             @db.Uuid
+  occurredAt  DateTime           @default(now()) @db.Timestamptz(6)
+  facultyId   String?            @db.Uuid
+  departmentId String?           @db.Uuid
+  projectId   String?            @db.Uuid
+  phaseId     String?            @db.Uuid
+  actorId     String?            @db.Uuid
+  /// Snapshots, so the log stays readable after renames or removals.
+  actorName   String
+  actingRole  String
+  category    ActivityCategory
+  action      String
+  targetType  String?
+  targetId    String?            @db.Uuid
+  targetLabel String             @default("")
+  before      String?
+  after       String?
+  reason      String?
+  isOverride  Boolean            @default(false)
+  visibility  ActivityVisibility @default(all)
+
+  @@index([workspaceId, occurredAt(sort: Desc)])
+  @@index([projectId, occurredAt(sort: Desc)])
+  @@index([workspaceId, facultyId, occurredAt(sort: Desc)])
+  @@index([workspaceId, departmentId, occurredAt(sort: Desc)])
+}
+
+/// Security / admin record (sign-ins, password resets, session revocations).
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String?  @db.Uuid
+  actorId     String?  @db.Uuid
+  action      String
+  targetType  String?
+  targetId    String?
+  ip          String?
+  userAgent   String?
+  data        Json?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+}
+
+/* ------------------------------------------------------------------ */
+/* Integrations, jobs, idempotency                                     */
+/* ------------------------------------------------------------------ */
+
+model GoogleDriveConnection {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String      @unique @db.Uuid
+  googleEmail     String
+  /// AES-256-GCM: iv(12) | tag(16) | ciphertext. Never leaves the server.
+  refreshTokenEnc Bytes
+  keyId           String
+  status          DriveStatus @default(connected)
+  rootFolderName  String      @default("Project N")
+  rootFolderId    String?
+  error           String?
+  connectedAt     DateTime    @default(now()) @db.Timestamptz(6)
+
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Durable job queue (transactional outbox). Claimed with FOR UPDATE SKIP LOCKED.
+model Job {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind        String
+  payload     Json      @default("{}")
+  workspaceId String?   @db.Uuid
+  runAt       DateTime  @default(now()) @db.Timestamptz(6)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  status      JobStatus @default(queued)
+  lockedAt    DateTime? @db.Timestamptz(6)
+  lockedBy    String?
+  lastError   String?
+  /// Optional: enqueueing the same dedupeKey twice is a no-op.
+  dedupeKey   String?   @unique
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  finishedAt  DateTime? @db.Timestamptz(6)
+
+  @@index([status, runAt])
+  @@index([kind, status])
+}
+
+model IdempotencyKey {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String           @db.Uuid
+  key            String
+  method         String
+  path           String
+  requestHash    String
+  state          IdempotencyState @default(in_progress)
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  expiresAt      DateTime         @db.Timestamptz(6)
+
+  @@unique([userId, key, method, path])
+  @@index([expiresAt])
+}

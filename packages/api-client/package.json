@@ -1,0 +1,18 @@
+{
+  "name": "@projectn/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed client for the Project N REST API (web, React Native, Tauri). Generated types + a small fetch wrapper.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.14.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}

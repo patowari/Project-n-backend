@@ -1,0 +1,106 @@
+// Introspects a freshly migrated PostgreSQL and writes docs/SCHEMA.md, so the document cannot
+// disagree with the database.   node scripts/gen-schema-doc.mjs
+import { writeFileSync } from 'node:fs'
+import { startPg } from './pg-embedded.mjs'
+import { bootstrapDb } from './db-bootstrap.mjs'
+
+const PURPOSE = {
+  users: 'Global identity (one e-mail, many workspaces). Argon2id hash, profile, preferences.',
+  sessions: 'One row per signed-in device.',
+  refresh_tokens: 'Rotating refresh tokens (SHA-256 only); `used_at` is set by one atomic update.',
+  auth_tokens: 'E-mail verification, password reset, e-mail change (hashed, single use).',
+  plans: 'Platform plans and AI budgets (Super Admin).',
+  workspaces: 'Tenant: `institution` or `supervision`; `pending_approval` until a Super Admin approves.',
+  workspace_settings: 'Per-tenant limits, defaults, AI budget.',
+  faculties: 'Institution structure.',
+  departments: 'Institution structure (belongs to a faculty).',
+  memberships: 'A user in a workspace; holds the Admin-granted approval permission.',
+  membership_roles: 'Workspace roles with scope (Dean→faculty, Head→department).',
+  invites: 'Pending invitations (token hash, role, scope, 7-day expiry).',
+  projects: 'Project; stored health, status, unlock rule, optimistic-lock `version`.',
+  project_members: 'Lead / co-supervisor / student, group-leader and successor flags, `left_at`.',
+  phase_templates: 'Reusable timelines.',
+  phase_template_items: 'Template phases.',
+  phases: 'Phase lifecycle (trigger-guarded), due date, latest version.',
+  phase_requirements: 'Documents a phase asks for.',
+  phase_resources: 'Guides and links shared by supervisors.',
+  draft_files: 'Files gathered for the next version (metadata only).',
+  submissions: 'Immutable, numbered versions (trigger-guarded).',
+  submission_files: 'Metadata of files in Drive (never bytes).',
+  reviews: 'Append-only decisions: one routine + at most one Dean-override per version.',
+  ai_reviews: 'AI output: student feedback and supervisor summary (JSON).',
+  ai_usage: 'Metering; `job_id` is unique, so billing is idempotent.',
+  approval_revocations: 'Revoked approval rights (project or faculty scope); reasons visible to leadership only.',
+  overrides: 'Append-only record of every Dean override with before/after.',
+  extension_requests: 'Deadline extensions (one pending per phase).',
+  comments: 'Threaded comments; `supervisors_only` hidden from students by RLS.',
+  comment_mentions: '@mentions.',
+  time_logs: 'Hours (students) and meetings (supervisors).',
+  notifications: 'In-app notifications (own rows only).',
+  activity_log: 'Append-only user-facing history with snapshots.',
+  audit_log: 'Append-only security/admin record.',
+  google_drive_connections: 'Encrypted Drive refresh token per user.',
+  jobs: 'Durable queue (transactional outbox).',
+  idempotency_keys: 'Replayable results for `Idempotency-Key`.',
+}
+
+const port = 54370
+const pg = await startPg({ name: 'schema-doc', port })
+try {
+  await bootstrapDb(pg, port)
+  const c = pg.getPgClient('projectn')
+  await c.connect()
+  const q = async (sql) => (await c.query(sql)).rows
+  const tables = await q(`select c.relname t, c.relrowsecurity rls, c.reltuples from pg_class c where c.relkind = 'r' and c.relnamespace = 'public'::regnamespace and c.relname <> '_prisma_migrations' order by 1`)
+  const cols = await q(`select table_name t, count(*) n from information_schema.columns where table_schema = 'public' group by 1`)
+  const idx = await q(`select tablename t, count(*) n from pg_indexes where schemaname = 'public' group by 1`)
+  const fks = await q(`select conrelid::regclass::text t, count(*) n from pg_constraint where contype = 'f' and connamespace = 'public'::regnamespace group by 1`)
+  const pol = await q(`select tablename t, policyname p, cmd, coalesce(qual,'') qual, coalesce(with_check,'') chk from pg_policies where schemaname = 'public' order by 1, 2`)
+  const fns = await q(`select p.proname n, pg_get_function_arguments(p.oid) a, p.prosecdef def, obj_description(p.oid) d from pg_proc p where p.pronamespace = 'public'::regnamespace and (p.proname like 'pn\\_%' or p.proname in ('pn_grants','append_only','phases_status_guard','submissions_immutable')) order by 1`)
+  const trg = await q(`select event_object_table t, trigger_name n, event_manipulation e from information_schema.triggers where trigger_schema = 'public' order by 1, 2`)
+  const grants = await q(`select table_name t, string_agg(privilege_type, ', ' order by privilege_type) g from information_schema.role_table_grants where grantee = 'projectn_app' and table_schema = 'public' group by 1 order by 1`)
+  const uniq = await q(`select tablename t, indexname n, indexdef d from pg_indexes where schemaname = 'public' and indexdef like '%UNIQUE%' and indexdef like '% WHERE %' order by 1, 2`)
+
+  const get = (rows, t) => Number(rows.find((r) => r.t === t)?.n ?? 0)
+  let md = `# Database schema
+
+_Generated by \`scripts/gen-schema-doc.mjs\` from a freshly migrated database (\`prisma/migrations\`). Do not edit by hand._
+
+${tables.length} tables, ${tables.filter((t) => t.rls).length} with Row Level Security. Source of truth: \`prisma/schema.src.prisma\` (camelCase) → \`prisma/schema.prisma\` (snake_case) → \`migrations/0001_init\` (generated DDL) + \`migrations/0002_rls_roles_constraints\` (hand-written).
+
+## Conventions
+
+* \`uuid\` keys (\`gen_random_uuid()\`), \`timestamptz\`, enums are native PostgreSQL enums.
+* **Tenant tables** carry \`workspace_id\`, expose \`UNIQUE (workspace_id, id)\`, and reference their tenant parents with a **composite foreign key** \`(workspace_id, parent_id)\`. A child can therefore never point at a parent in another workspace.
+* Soft delete (\`deleted_at\`) on projects and comments; history tables are append-only.
+* Three roles: owner (migrations), \`projectn_app\` (API, RLS applies), \`projectn_system\` (workers, BYPASSRLS).
+
+## Tables
+
+| Table | Cols | Indexes | FKs | RLS | Purpose |
+|---|---:|---:|---:|:--:|---|
+`
+  for (const t of tables) md += `| \`${t.t}\` | ${get(cols, t.t)} | ${get(idx, t.t)} | ${get(fks, t.t)} | ${t.rls ? 'yes' : 'no'} | ${PURPOSE[t.t] ?? ''} |\n`
+  md += `\n\`plans\` and \`jobs\` have no RLS by design: \`plans\` is platform data, and \`jobs\` is written by the API (INSERT only) and consumed by workers.\n`
+
+  md += `\n## Roles and grants for \`projectn_app\`\n\n| Table | Privileges |\n|---|---|\n`
+  for (const g of grants) md += `| \`${g.t}\` | ${g.g} |\n`
+
+  md += `\n## Row Level Security policies\n\nSettings read by the policies, set per transaction: \`app.user_id\`, \`app.workspace_id\`, \`app.auth_mode\` (sign-up / invite acceptance only).\n\n| Table | Policy | Applies to | USING | WITH CHECK |\n|---|---|---|---|---|\n`
+  const clip = (s) => '`' + s.replace(/\s+/g, ' ').replace(/\|/g, '\\|').slice(0, 220) + (s.length > 220 ? ' ...' : '') + '`'
+  for (const p of pol) md += `| \`${p.t}\` | ${p.p} | ${p.cmd} | ${p.qual ? clip(p.qual) : ''} | ${p.chk ? clip(p.chk) : ''} |\n`
+
+  md += `\n## SQL functions\n\n\`SECURITY DEFINER\` functions pin \`search_path\` and only look at rows keyed to the caller (\`pn_uid()\`, \`pn_ws()\`). CI (\`verify-ci-local.mjs\`) fails if one does not pin it.\n\n| Function | Arguments | Definer |\n|---|---|:--:|\n`
+  for (const f of fns) md += `| \`${f.n}\` | \`${f.a}\` | ${f.def ? 'yes' : ''} |\n`
+
+  md += `\n## Triggers\n\n| Table | Trigger | On |\n|---|---|---|\n`
+  for (const t of trg) md += `| \`${t.t}\` | ${t.n} | ${t.e} |\n`
+
+  md += `\n## Partial unique indexes (business invariants)\n\n| Table | Index |\n|---|---|\n`
+  for (const u of uniq) md += `| \`${u.t}\` | \`${u.d.replace('CREATE UNIQUE INDEX ', '').replace(' ON public.', ' ON ')}\` |\n`
+  writeFileSync('docs/SCHEMA.md', md)
+  console.log(`docs/SCHEMA.md: ${tables.length} tables, ${pol.length} policies, ${fns.length} functions, ${trg.length} triggers`)
+  await c.end()
+} finally {
+  await pg.stop()
+}

@@ -1,0 +1,53 @@
+# ----------------------------------------------------------------------------
+# RENDER: FREE DEMO CONFIGURATION  (not for production)
+#
+# What this is: a pilot / demo that costs nothing. It deliberately runs the job
+# loop inside the API process (INLINE_WORKER=true) because the free tier has no
+# background workers.
+#
+# What the free tier cannot do (so do NOT size anything on it):
+#   * one instance, 0.1 CPU / 512 MB, sleeps after ~15 min idle (cold start 30-60 s)
+#   * no zero-downtime deploys, no autoscaling, no uptime commitment
+#   * no pre-deploy command: migrations run at start-up, as below
+#   * the API restarts during deploys; in-flight requests can fail
+#   * no Redis => rate limits / caches / session revocation are per-process
+# Use render.production.yaml for anything real.
+#
+# Database: use an external Postgres with UTF8 encoding (e.g. Neon). Render's free
+# Postgres expires after 30 days. Set DATABASE_* in the dashboard (sync: false).
+# ----------------------------------------------------------------------------
+services:
+  - type: web
+    name: projectn-api-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    dockerCommand: sh -c "npx prisma migrate deploy && node scripts/db-setup.cjs && node dist/main.js"
+    envVars:
+      - { key: NODE_ENV, value: production }
+      - { key: INLINE_WORKER, value: "true" }
+      - { key: TRUST_PROXY, value: "true" }
+      - { key: LOG_LEVEL, value: info }
+      - { key: WORKER_CONCURRENCY, value: "1" }
+      - { key: JWT_SECRET, generateValue: true }
+      - { key: CRON_SECRET, generateValue: true }
+      - { key: TOKEN_ENCRYPTION_KEY, sync: false }       # openssl rand -base64 32
+      - { key: DATABASE_MIGRATION_URL, sync: false }     # owner role, direct (non-pooled) connection
+      - { key: DATABASE_URL, sync: false }               # projectn_app, pooled
+      - { key: DATABASE_SYSTEM_URL, sync: false }        # projectn_system, pooled
+      - { key: APP_DB_PASSWORD, sync: false }
+      - { key: SYSTEM_DB_PASSWORD, sync: false }
+      - { key: APP_BASE_URL, sync: false }               # https://app.example.com
+      - { key: CORS_ORIGINS, sync: false }               # https://app.example.com
+      - { key: COOKIE_DOMAIN, sync: false }              # .example.com (same site as the API)
+      - { key: MAIL_DRIVER, value: resend }
+      - { key: RESEND_API_KEY, sync: false }
+      - { key: EMAIL_FROM, sync: false }
+      - { key: DRIVE_DRIVER, value: google }
+      - { key: GOOGLE_OAUTH_CLIENT_ID, sync: false }
+      - { key: GOOGLE_OAUTH_CLIENT_SECRET, sync: false }
+      - { key: GOOGLE_OAUTH_REDIRECT_BASE, sync: false } # https://api.example.com/api/v1
+      - { key: AI_DRIVER, value: gemini }
+      - { key: GEMINI_API_KEY, sync: false }

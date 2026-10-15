@@ -1,0 +1,11 @@
+node_modules
+dist
+.pgdata
+rust/doc-tools/target
+.env
+.env.*
+coverage
+packages
+test
+docs
+openapi.json

@@ -1,0 +1,78 @@
+# ----------------------------------------------------------------------------
+# RENDER: PRODUCTION LAYOUT
+#
+# Stateless API instances behind Render's load balancer, an independently
+# scaled worker, managed Postgres and Redis. Sizes below are STARTING POINTS
+# chosen from the workload model in docs/SCALING.md and the
+# measurements in docs/LOAD_TEST.md; re-measure before launch and
+# adjust. Nothing here is sized from free-tier limits.
+#
+# Rollout: migrations run in the pre-deploy step (paid plans), BEFORE new
+# instances receive traffic. Migrations are written to be backward compatible
+# with the previous release (expand, then contract) so a rolling deploy is safe.
+# ----------------------------------------------------------------------------
+databases:
+  - name: projectn-db
+    plan: pro-4gb               # resize from metrics; enable point-in-time recovery
+    region: singapore
+    databaseName: projectn
+    postgresMajorVersion: "16"
+    # Create the runtime roles with docs/OPERATIONS.md (scripts/db-setup.cjs).
+
+services:
+  - type: keyvalue              # Redis: rate limits, caches, session revocation
+    name: projectn-redis
+    plan: starter
+    region: singapore
+    maxmemoryPolicy: volatile-lru
+    ipAllowList: []             # private network only
+
+  - type: web
+    name: projectn-api
+    runtime: docker
+    plan: standard              # 1 CPU / 2 GB per instance; scale OUT with numInstances / autoscaling
+    region: singapore
+    numInstances: 2
+    scaling: { minInstances: 2, maxInstances: 8, targetCPUPercent: 60 }
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /readyz
+    preDeployCommand: npx prisma migrate deploy && node scripts/db-setup.cjs
+    envVars: &common
+      - { key: NODE_ENV, value: production }
+      - { key: INLINE_WORKER, value: "false" }
+      - { key: TRUST_PROXY, value: "true" }
+      - { key: LOG_LEVEL, value: info }
+      - { key: REDIS_URL, fromService: { type: keyvalue, name: projectn-redis, property: connectionString } }
+      - { key: JWT_SECRET, sync: false }
+      - { key: TOKEN_ENCRYPTION_KEY, sync: false }
+      - { key: TOKEN_ENCRYPTION_KEY_ID, value: k1 }
+      - { key: CRON_SECRET, sync: false }
+      - { key: METRICS_TOKEN, sync: false }
+      - { key: DATABASE_MIGRATION_URL, sync: false }    # owner, direct connection
+      - { key: DATABASE_URL, sync: false }              # projectn_app, via PgBouncer (transaction mode needs ?pgbouncer=true)
+      - { key: DATABASE_SYSTEM_URL, sync: false }       # projectn_system
+      - { key: APP_DB_PASSWORD, sync: false }
+      - { key: SYSTEM_DB_PASSWORD, sync: false }
+      - { key: APP_BASE_URL, sync: false }
+      - { key: CORS_ORIGINS, sync: false }
+      - { key: COOKIE_DOMAIN, sync: false }
+      - { key: MAIL_DRIVER, value: resend }
+      - { key: RESEND_API_KEY, sync: false }
+      - { key: EMAIL_FROM, sync: false }
+      - { key: DRIVE_DRIVER, value: google }
+      - { key: GOOGLE_OAUTH_CLIENT_ID, sync: false }
+      - { key: GOOGLE_OAUTH_CLIENT_SECRET, sync: false }
+      - { key: GOOGLE_OAUTH_REDIRECT_BASE, sync: false }
+      - { key: AI_DRIVER, value: gemini }
+      - { key: GEMINI_API_KEY, sync: false }
+      - { key: GEMINI_MODEL, value: gemini-2.5-flash }
+
+  - type: worker                # same image, no HTTP; scale independently
+    name: projectn-worker
+    runtime: docker
+    plan: standard
+    region: singapore
+    numInstances: 2
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node dist/worker.js
+    envVars: *common
