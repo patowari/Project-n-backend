@@ -101,7 +101,7 @@ export class MeSettingsService {
     ])
     return {
       passwordChangedAt: u.passwordChangedAt,
-      googleLinked: false,
+      googleLinked: u.googleSub !== null,
       pendingEmail: (pending?.payload as { email?: string } | null)?.email ?? null,
       sessions: sessions.map((s) => ({
         id: s.id,

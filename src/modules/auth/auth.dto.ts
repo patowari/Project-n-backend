@@ -42,3 +42,11 @@ export class ChangePasswordDto {
 export class ChangeEmailDto {
   @trim() @IsEmail() @MaxLength(254) email: string
 }
+
+export class GoogleStartDto {
+  @IsIn(['sign_in', 'sign_up']) mode: 'sign_in' | 'sign_up'
+  @IsOptional() @IsIn(['institution', 'supervision']) workspaceType?: 'institution' | 'supervision'
+  @IsOptional() @trim() @IsString() @Length(2, 120) workspaceName?: string
+  /** Relative path to open after sign-in, e.g. /projects */
+  @IsOptional() @IsString() @MaxLength(300) next?: string
+}

@@ -68,32 +68,39 @@ export class AuthService {
         data: { email, name: input.name, passwordHash, passwordChangedAt: new Date() },
       })
       await this.db.setUser(user.id)
-      const workspace = await tx.workspace.create({
-        data: {
-          name: input.workspaceName,
-          shortName: input.workspaceName.slice(0, 24),
-          type: input.workspaceType,
-          status,
-        },
-      })
-      await this.db.setWorkspace(workspace.id)
-      const roles =
-        input.workspaceType === 'supervision'
-          ? (['supervision_owner', 'supervisor'] as const)
-          : (['institution_admin'] as const)
-      const membership = await tx.membership.create({
-        data: { workspaceId: workspace.id, userId: user.id, canApprove: input.workspaceType === 'supervision' },
-      })
-      await tx.membershipRole.createMany({
-        data: roles.map((role) => ({ workspaceId: workspace.id, membershipId: membership.id, role })),
-      })
-      // Only after the membership exists does the workspace become visible to its owner (RLS: pn_ws()).
-      await tx.workspaceSettings.create({ data: { workspaceId: workspace.id } })
-      await tx.user.update({ where: { id: user.id }, data: { defaultWorkspaceId: workspace.id } })
+      const workspace = await this.createOwnerWorkspace(user.id, input.workspaceType, input.workspaceName, status)
       await this.issueVerification(user.id, email, user.name)
       await this.audit.log('auth.signup', { actorId: user.id, workspaceId: workspace.id, targetType: 'workspace', targetId: workspace.id })
     })
     return { workspaceStatus: status }
+  }
+
+  /**
+   * Creates a workspace with `userId` as its owner (Supervision Owner + Supervisor, or Institution Admin).
+   * Call inside `db.asAuth` after `db.setUser(userId)`; shared by e-mail and Google sign-up.
+   */
+  async createOwnerWorkspace(userId: string, type: WorkspaceType, name: string, status: 'active' | 'pending_approval') {
+    const tx = this.db.tx
+    const workspace = await tx.workspace.create({
+      data: {
+        name,
+        shortName: name.slice(0, 24),
+        type,
+        status,
+      },
+    })
+    await this.db.setWorkspace(workspace.id)
+    const roles = type === 'supervision' ? (['supervision_owner', 'supervisor'] as const) : (['institution_admin'] as const)
+    const membership = await tx.membership.create({
+      data: { workspaceId: workspace.id, userId, canApprove: type === 'supervision' },
+    })
+    await tx.membershipRole.createMany({
+      data: roles.map((role) => ({ workspaceId: workspace.id, membershipId: membership.id, role })),
+    })
+    // Only after the membership exists does the workspace become visible to its owner (RLS: pn_ws()).
+    await tx.workspaceSettings.create({ data: { workspaceId: workspace.id } })
+    await tx.user.update({ where: { id: userId }, data: { defaultWorkspaceId: workspace.id } })
+    return workspace
   }
 
   /* ----------------------------- login ----------------------------- */
@@ -151,7 +158,7 @@ export class AuthService {
     })
   }
 
-  private async createSession(userId: string) {
+  async createSession(userId: string) {
     const m = requestMeta()
     const session = await this.db.tx.session.create({
       data: { userId, deviceLabel: deviceLabel(m.userAgent), ip: m.ip, userAgent: m.userAgent },

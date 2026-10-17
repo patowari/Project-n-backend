@@ -10,6 +10,7 @@ import { KvService } from './infra/kv'
 import { PrismaService, SystemPrismaService } from './infra/prisma.service'
 import { AuthController } from './modules/auth/auth.controller'
 import { AuthService } from './modules/auth/auth.service'
+import { GoogleAuthService } from './modules/auth/google-auth.service'
 import { InviteAcceptanceService } from './modules/auth/invite-acceptance.service'
 import { MeService } from './modules/auth/me.view'
 import { PasswordService } from './modules/auth/password'
@@ -19,6 +20,9 @@ import { HealthController } from './modules/health/health.controller'
 import { DrivePort } from './integrations/drive.port'
 import { FakeDriveGateway } from './integrations/drive.fake'
 import { GoogleDriveGateway } from './integrations/drive.google'
+import { FakeIdentityGateway } from './integrations/identity.fake'
+import { GoogleIdentityGateway } from './integrations/identity.google'
+import { IdentityPort } from './integrations/identity.port'
 import { MeController } from './modules/me/me.controller'
 import { MeSettingsService } from './modules/me/me.service'
 import { WORKER_PROVIDERS } from './worker/providers'
@@ -41,6 +45,13 @@ import { FEATURE_CONTROLLERS, FEATURE_PROVIDERS } from './modules/features'
     NotificationService,
     FakeDriveGateway,
     GoogleDriveGateway,
+    FakeIdentityGateway,
+    GoogleIdentityGateway,
+    {
+      provide: IdentityPort,
+      inject: [ENV, FakeIdentityGateway, GoogleIdentityGateway],
+      useFactory: (env: Env, fake: FakeIdentityGateway, google: GoogleIdentityGateway): IdentityPort => (env.driveDriver === 'google' ? google : fake),
+    },
     {
       provide: DrivePort,
       inject: [ENV, FakeDriveGateway, GoogleDriveGateway],
@@ -60,6 +71,7 @@ import { FEATURE_CONTROLLERS, FEATURE_PROVIDERS } from './modules/features'
     ActivityService,
     NotificationService,
     DrivePort,
+    IdentityPort,
     FakeDriveGateway,
   ],
 })
@@ -72,6 +84,7 @@ export class CoreModule {}
     AuthService,
     MeService,
     InviteAcceptanceService,
+    GoogleAuthService,
     MeSettingsService,
     ...FEATURE_PROVIDERS,
     ...WORKER_PROVIDERS,

@@ -1,6 +1,6 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Req, Res } from '@nestjs/common'
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query, Req, Res } from '@nestjs/common'
 import { IsOptional, IsString, Length } from 'class-validator'
-import { ApiTags } from '@nestjs/swagger'
+import { ApiBearerAuth, ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger'
 import type { Response } from 'express'
 import { Caller } from '../../authz/caller'
 import {
@@ -14,8 +14,9 @@ import {
   RateLimit,
 } from '../../common/http'
 import { ENV, Env } from '../../config/env'
-import { AcceptInviteDto, EmailDto, LoginDto, ResetPasswordDto, SignUpDto, TokenDto } from './auth.dto'
+import { AcceptInviteDto, EmailDto, GoogleStartDto, LoginDto, ResetPasswordDto, SignUpDto, TokenDto } from './auth.dto'
 import { AuthService } from './auth.service'
+import { GoogleAuthService } from './google-auth.service'
 import { InviteAcceptanceService } from './invite-acceptance.service'
 import { MeService } from './me.view'
 
@@ -35,6 +36,7 @@ export class AuthController {
     private auth: AuthService,
     private me: MeService,
     private invites: InviteAcceptanceService,
+    private google: GoogleAuthService,
     @Inject(ENV) private env: Env
   ) {}
 
@@ -156,6 +158,51 @@ export class AuthController {
   async reset(@Body() dto: ResetPasswordDto) {
     await this.auth.resetPassword(dto.token, dto.password)
     return { reset: true }
+  }
+
+  /* ---- Google sign-in / sign-up / link (identity only; Drive is a separate consent) ---- */
+
+  /** Returns the Google consent URL; the browser navigates to it. */
+  @Public()
+  @HttpCode(200)
+  @RateLimit({ by: 'ip', limit: 30, windowSec: 60 })
+  @Post('google/start')
+  googleStart(@Body() dto: GoogleStartDto) {
+    return this.google.start(dto)
+  }
+
+  /** Google redirects the browser here; we set the session cookie and send the user back to the app. */
+  @ApiExcludeEndpoint()
+  @Public()
+  @RateLimit({ by: 'ip', limit: 60, windowSec: 60 })
+  @Get('google/callback')
+  async googleCallback(
+    @Query('state') state: string,
+    @Query('code') code: string | undefined,
+    @Query('error') error: string | undefined,
+    @Res() res: Response
+  ) {
+    const r = await this.google.finish(state ?? '', code, error)
+    if (r.refreshToken) this.setCookie(res, r.refreshToken)
+    res.redirect(302, r.redirect)
+  }
+
+  /** Signed-in user links a Google account so they can sign in with it later. */
+  @ApiBearerAuth()
+  @NoWorkspace()
+  @HttpCode(200)
+  @RateLimit({ by: 'user', limit: 10, windowSec: 600 })
+  @Post('google/link')
+  googleLink(@CurrentCaller() c: Caller) {
+    return this.google.startLink(c.userId)
+  }
+
+  @ApiBearerAuth()
+  @NoWorkspace()
+  @HttpCode(204)
+  @Delete('google')
+  async googleUnlink(@CurrentCaller() c: Caller) {
+    await this.google.unlink(c.userId)
   }
 
   /* ---- invite links (e-mail) ---- */

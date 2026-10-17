@@ -210,6 +210,8 @@ model User {
   email               String     @unique
   name                String
   passwordHash        String?
+  /// Google account id (`sub`) once the person has signed in with / linked Google. Unique.
+  googleSub           String?    @unique
   emailVerifiedAt     DateTime?  @db.Timestamptz(6)
   isPlatformAdmin     Boolean    @default(false)
   status              UserStatus @default(active)
