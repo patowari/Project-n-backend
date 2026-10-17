@@ -6,23 +6,23 @@
   "results": [
     {
       "instances": 1,
-      "reqPerSec": 84,
-      "p50": 347,
-      "p99": 905,
+      "reqPerSec": 48,
+      "p50": 522,
+      "p99": 2941,
       "failed": 0
     },
     {
       "instances": 2,
-      "reqPerSec": 108,
-      "p50": 510,
-      "p99": 1601,
+      "reqPerSec": 80,
+      "p50": 741,
+      "p99": 1600,
       "failed": 0
     },
     {
       "instances": 4,
-      "reqPerSec": 117,
-      "p50": 998,
-      "p99": 3029,
+      "reqPerSec": 100,
+      "p50": 1238,
+      "p99": 3412,
       "failed": 0
     }
   ]

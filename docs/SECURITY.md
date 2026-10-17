@@ -17,7 +17,7 @@ What is enforced, where, and what is still open. Verification references point a
 | Verification and reset tokens | 32 random bytes, hashed at rest, single use, 24 h / 30 min, a new token invalidates older ones | `auth.e2e-spec` |
 | Unverified users | can sign in and read, cannot write (`403 email_not_verified`) | `auth.e2e-spec` |
 
-**Not implemented:** Google sign-in (only the Drive connection uses Google), TOTP / two-factor (decision D4), institution SSO (D5).
+**Google sign-in** is implemented (OpenID Connect, PKCE, state, nonce; account rules in INTEGRATIONS.md) and tested against a fake provider only. **Not implemented:** TOTP / two-factor (decision D4), institution SSO (D5).
 
 ## 2. Tenancy and authorization
 

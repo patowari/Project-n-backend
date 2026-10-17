@@ -1,0 +1,29 @@
+{
+  "machine": {
+    "cpus": 8,
+    "cpu": "AMD Ryzen 5 3400G with Radeon Vega Graphics    "
+  },
+  "results": [
+    {
+      "instances": 1,
+      "reqPerSec": 42,
+      "p50": 538,
+      "p99": 3655,
+      "failed": 0
+    },
+    {
+      "instances": 2,
+      "reqPerSec": 96,
+      "p50": 601,
+      "p99": 2163,
+      "failed": 0
+    },
+    {
+      "instances": 4,
+      "reqPerSec": 113,
+      "p50": 1089,
+      "p99": 3241,
+      "failed": 0
+    }
+  ]
+}

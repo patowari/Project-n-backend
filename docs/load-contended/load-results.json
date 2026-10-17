@@ -1,0 +1,432 @@
+{
+  "startedAt": "2026-10-15T23:01:14.584Z",
+  "machine": {
+    "cpus": 8,
+    "cpu": "AMD Ryzen 5 3400G with Radeon Vega Graphics    ",
+    "memGb": 14,
+    "platform": "win32 10.0.26200",
+    "node": "v22.14.0"
+  },
+  "postgres": "18.4",
+  "config": {
+    "connections": 32,
+    "durationS": 15,
+    "dbPool": 20
+  },
+  "scenarios": [
+    {
+      "title": "GET /me (student)",
+      "connections": 32,
+      "durationS": 15.16,
+      "reqPerSec": 66,
+      "latencyMs": {
+        "p50": 455,
+        "p90": 621,
+        "p97_5": 777,
+        "p99": 853,
+        "max": 1076
+      },
+      "total": 991,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 74785
+    },
+    {
+      "title": "GET /projects?limit=50 (student: 1 project)",
+      "connections": 32,
+      "durationS": 15.15,
+      "reqPerSec": 53,
+      "latencyMs": {
+        "p50": 565,
+        "p90": 745,
+        "p97_5": 1038,
+        "p99": 1201,
+        "max": 1322
+      },
+      "total": 788,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 87459
+    },
+    {
+      "title": "GET /projects?limit=50 (supervisor)",
+      "connections": 32,
+      "durationS": 15.17,
+      "reqPerSec": 42,
+      "latencyMs": {
+        "p50": 781,
+        "p90": 965,
+        "p97_5": 1155,
+        "p99": 1427,
+        "max": 1658
+      },
+      "total": 624,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 798997
+    },
+    {
+      "title": "GET /projects?limit=50 (head: department)",
+      "connections": 32,
+      "durationS": 15.15,
+      "reqPerSec": 29,
+      "latencyMs": {
+        "p50": 1071,
+        "p90": 1345,
+        "p97_5": 1560,
+        "p99": 1638,
+        "max": 1666
+      },
+      "total": 430,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 1214302
+    },
+    {
+      "title": "GET /projects?limit=50 (dean: faculty, ~830 visible)",
+      "connections": 32,
+      "durationS": 15.26,
+      "reqPerSec": 25,
+      "latencyMs": {
+        "p50": 1237,
+        "p90": 1629,
+        "p97_5": 2056,
+        "p99": 2152,
+        "max": 2299
+      },
+      "total": 378,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 1067674
+    },
+    {
+      "title": "GET /projects?limit=50 (institution admin: 2,500 rows)",
+      "connections": 32,
+      "durationS": 15.16,
+      "reqPerSec": 32,
+      "latencyMs": {
+        "p50": 986,
+        "p90": 1151,
+        "p97_5": 1345,
+        "p99": 1535,
+        "max": 1686
+      },
+      "total": 473,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 1338445
+    },
+    {
+      "title": "GET /projects/{id} (supervisor, detail)",
+      "connections": 32,
+      "durationS": 15.12,
+      "reqPerSec": 62,
+      "latencyMs": {
+        "p50": 484,
+        "p90": 604,
+        "p97_5": 994,
+        "p99": 1158,
+        "max": 1384
+      },
+      "total": 932,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 213245
+    },
+    {
+      "title": "GET /projects/{id}/activity (supervisor)",
+      "connections": 32,
+      "durationS": 15.09,
+      "reqPerSec": 79,
+      "latencyMs": {
+        "p50": 382,
+        "p90": 559,
+        "p97_5": 623,
+        "p99": 665,
+        "max": 756
+      },
+      "total": 1186,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 1192004
+    },
+    {
+      "title": "GET /activity?limit=50 (dean, faculty scope)",
+      "connections": 32,
+      "durationS": 15.63,
+      "reqPerSec": 43,
+      "latencyMs": {
+        "p50": 644,
+        "p90": 1142,
+        "p97_5": 2034,
+        "p99": 2244,
+        "max": 2335
+      },
+      "total": 646,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 649246
+    },
+    {
+      "title": "GET /reviews/queue (supervisor)",
+      "connections": 32,
+      "durationS": 15.11,
+      "reqPerSec": 35,
+      "latencyMs": {
+        "p50": 905,
+        "p90": 1146,
+        "p97_5": 1420,
+        "p99": 1478,
+        "max": 1520
+      },
+      "total": 523,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 522338
+    },
+    {
+      "title": "GET /calendar (student, 30 days)",
+      "connections": 32,
+      "durationS": 15.1,
+      "reqPerSec": 71,
+      "latencyMs": {
+        "p50": 366,
+        "p90": 783,
+        "p97_5": 1248,
+        "p99": 1486,
+        "max": 1528
+      },
+      "total": 1070,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 98935
+    },
+    {
+      "title": "GET /notifications/unread-count (supervisor)",
+      "connections": 32,
+      "durationS": 15.17,
+      "reqPerSec": 64,
+      "latencyMs": {
+        "p50": 449,
+        "p90": 787,
+        "p97_5": 943,
+        "p99": 1020,
+        "max": 1089
+      },
+      "total": 953,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 51398
+    },
+    {
+      "title": "GET /reports/summary (dean, cached 60 s)",
+      "connections": 32,
+      "durationS": 15.68,
+      "reqPerSec": 51,
+      "latencyMs": {
+        "p50": 504,
+        "p90": 920,
+        "p97_5": 2623,
+        "p99": 2821,
+        "max": 3053
+      },
+      "total": 761,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 803691
+    },
+    {
+      "title": "POST /comments (student)",
+      "connections": 32,
+      "durationS": 15.31,
+      "reqPerSec": 28,
+      "latencyMs": {
+        "p50": 961,
+        "p90": 2027,
+        "p97_5": 2424,
+        "p99": 2440,
+        "max": 2628
+      },
+      "total": 414,
+      "non2xx": 0,
+      "errors": 0,
+      "timeouts": 0,
+      "bytesPerSec": 23413
+    }
+  ],
+  "cold": [
+    {
+      "workspace": 1,
+      "status": 200,
+      "ms": 1345
+    },
+    {
+      "workspace": 2,
+      "status": 200,
+      "ms": 2184
+    },
+    {
+      "workspace": 3,
+      "status": 200,
+      "ms": 1969
+    },
+    {
+      "workspace": 4,
+      "status": 200,
+      "ms": 1925
+    },
+    {
+      "workspace": 5,
+      "status": 200,
+      "ms": 1329
+    },
+    {
+      "workspace": 6,
+      "status": 200,
+      "ms": 1473
+    },
+    {
+      "workspace": 7,
+      "status": 200,
+      "ms": 1351
+    },
+    {
+      "workspace": 8,
+      "status": 200,
+      "ms": 1379
+    }
+  ],
+  "login": {
+    "title": "POST /auth/login",
+    "connections": 4,
+    "durationS": 10.1,
+    "reqPerSec": 12,
+    "latencyMs": {
+      "p50": 298,
+      "p90": 470,
+      "p97_5": 1158,
+      "p99": 1292,
+      "max": 1457
+    },
+    "total": 115,
+    "non2xx": 0,
+    "errors": 0,
+    "timeouts": 0,
+    "bytesPerSec": 18378
+  },
+  "mixed": {
+    "title": "mixed profile",
+    "connections": 32,
+    "durationS": 15.18,
+    "reqPerSec": 35,
+    "latencyMs": {
+      "p50": 850,
+      "p90": 1350,
+      "p97_5": 1668,
+      "p99": 1753,
+      "max": 1971
+    },
+    "total": 519,
+    "non2xx": 0,
+    "errors": 0,
+    "timeouts": 0,
+    "bytesPerSec": 372980
+  },
+  "plans": [
+    {
+      "name": "projects page: student",
+      "executionMs": 61.7,
+      "planningMs": 10.7,
+      "seqScansOnBigTables": [],
+      "sharedHit": 1568,
+      "sharedRead": 91
+    },
+    {
+      "name": "projects page: supervisor",
+      "executionMs": 17.3,
+      "planningMs": 0.4,
+      "seqScansOnBigTables": [],
+      "sharedHit": 684,
+      "sharedRead": 25
+    },
+    {
+      "name": "projects page: dean (faculty scope)",
+      "executionMs": 13.5,
+      "planningMs": 0.3,
+      "seqScansOnBigTables": [],
+      "sharedHit": 134,
+      "sharedRead": 9
+    },
+    {
+      "name": "projects page: institution admin",
+      "executionMs": 2.6,
+      "planningMs": 0.5,
+      "seqScansOnBigTables": [],
+      "sharedHit": 31,
+      "sharedRead": 3
+    },
+    {
+      "name": "activity feed: dean",
+      "executionMs": 5.7,
+      "planningMs": 13,
+      "seqScansOnBigTables": [],
+      "sharedHit": 100,
+      "sharedRead": 21
+    },
+    {
+      "name": "activity feed: project (student)",
+      "executionMs": 2,
+      "planningMs": 0.3,
+      "seqScansOnBigTables": [],
+      "sharedHit": 70,
+      "sharedRead": 1
+    },
+    {
+      "name": "pending reviews (supervisor)",
+      "executionMs": 24.7,
+      "planningMs": 1.5,
+      "seqScansOnBigTables": [],
+      "sharedHit": 34,
+      "sharedRead": 54
+    },
+    {
+      "name": "comments for a project (student)",
+      "executionMs": 5.4,
+      "planningMs": 8.7,
+      "seqScansOnBigTables": [],
+      "sharedHit": 552,
+      "sharedRead": 31
+    }
+  ],
+  "apiRssMb": 266,
+  "dbConnectionsAfter": 20,
+  "worker": {
+    "healthRecompute": {
+      "projects": 400,
+      "avgMs": 115.7,
+      "p50Ms": 93.5,
+      "p95Ms": 256.8,
+      "p99Ms": 584
+    },
+    "queue": {
+      "jobs": 20203,
+      "seconds": 20.3,
+      "jobsPerSec": 997,
+      "runnersCompeting": 2,
+      "executedMoreThanOnce": 0
+    }
+  }
+}

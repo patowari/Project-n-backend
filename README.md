@@ -2,7 +2,7 @@
 
 NestJS + TypeScript API for the Project & Assignment Tracking System, on PostgreSQL (Row Level Security) with Redis, Prisma, durable background jobs and one small Rust helper. One versioned REST API (`/api/v1`) serves the React web app, a React Native app and a Tauri desktop app.
 
-> **Status in one paragraph.** Every workflow in the product brief is implemented and covered by automated tests that run against a real PostgreSQL 18 with the restricted application role (so Row Level Security is genuinely enforced): 150+ tests plus 7 Rust tests. Google Drive, Gemini and Resend are behind ports with fakes for development and tests; the **real adapters are written but have not been run against the live services** (no credentials here). Docker, Compose, Render and GitHub Actions files are written but **could not be executed in the authoring environment** (no Docker daemon); the checks they perform were reproduced locally where possible. Capacity is **measured, not claimed**: see [docs/LOAD_TEST.md](docs/LOAD_TEST.md). Read [docs/STATUS.md](docs/STATUS.md) for the honest list of what is done, tested and still open.
+> **Status in one paragraph.** Every workflow in the product brief is implemented and covered by automated tests that run against a real PostgreSQL 18 with the restricted application role (so Row Level Security is genuinely enforced): 184 tests in 10 suites plus 7 Rust tests. Google Drive, Gemini and Resend are behind ports with fakes for development and tests; the **real adapters are written but have not been run against the live services** (no credentials here). Docker, Compose, Render and GitHub Actions files are written but **could not be executed in the authoring environment** (no Docker daemon); the checks they perform were reproduced locally where possible. Capacity is **measured, not claimed**: see [docs/LOAD_TEST.md](docs/LOAD_TEST.md). Read [docs/STATUS.md](docs/STATUS.md) for the honest list of what is done, tested and still open.
 
 ## Quick start (no Docker needed)
 
@@ -20,8 +20,8 @@ Run the API against your own PostgreSQL and Redis:
 cp .env.example .env           # development defaults: fake Drive / AI, e-mail logged
 docker compose up postgres redis -d      # or any PostgreSQL 16+ and Redis 7
 npm run build
-DATABASE_MIGRATION_URL=postgresql://postgres:postgres@localhost:5432/projectn npx prisma migrate deploy
-APP_DB_PASSWORD=... SYSTEM_DB_PASSWORD=... DATABASE_MIGRATION_URL=... node scripts/db-setup.cjs
+npx prisma migrate deploy      # reads DATABASE_MIGRATION_URL from .env
+npm run db:setup               # sets the runtime role passwords from .env
 npm run seed                   # demo data: City University, Dr. Karim, Nadia Islam ...  (password: Demo-pass-12345)
 npm run start:dev              # API on :8000
 npm run start:worker           # in another terminal (or INLINE_WORKER=true for a single process)

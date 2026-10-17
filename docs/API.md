@@ -1,7 +1,7 @@
 # API reference
 
 _Generated from the OpenAPI document by `scripts/gen-api-doc.mjs`. Do not edit by hand._
-Live document: `GET /api/v1/openapi.json` (when enabled). 119 operations.
+Live document: `GET /api/v1/openapi.json` (when enabled). 122 operations.
 
 ## Conventions
 
@@ -33,6 +33,9 @@ Live document: `GET /api/v1/openapi.json` (when enabled). 119 operations.
 | POST | `/auth/resend-verification` _(public)_ | 202 |  |  |  |
 | POST | `/auth/forgot-password` _(public)_ | 202 | `EmailDto` |  |  |
 | POST | `/auth/reset-password` _(public)_ | 200 | `ResetPasswordDto` |  |  |
+| POST | `/auth/google/start` _(public)_ | 200 | `GoogleStartDto` | `object` |  |
+| POST | `/auth/google/link` | 200 |  | `object` |  |
+| DELETE | `/auth/google` | 204 |  |  |  |
 | GET | `/auth/invites/{token}` _(public)_ | 200 |  |  |  |
 | POST | `/auth/invites/{token}/accept` _(public)_ | 200 | `AcceptInviteDto` | `LoginResult` |  |
 
@@ -108,8 +111,8 @@ Live document: `GET /api/v1/openapi.json` (when enabled). 119 operations.
 | POST | `/projects/{id}/phases` | 201 | `AddPhaseDto` |  |  |
 | PATCH | `/phases/{id}` | 204 | `PatchPhaseDto` |  |  |
 | DELETE | `/phases/{id}` | 204 |  |  |  |
-| POST | `/phases/{id}/unlock` | 204 | `ReasonDto` |  |  |
-| POST | `/phases/{id}/lock` | 204 | `ReasonDto` |  |  |
+| POST | `/phases/{id}/unlock` | 204 | `PhaseReasonDto` |  |  |
+| POST | `/phases/{id}/lock` | 204 | `PhaseReasonDto` |  |  |
 | POST | `/phases/{id}/resources` | 201 | `ResourceDto` |  |  |
 | DELETE | `/phases/{id}/resources/{resourceId}` | 204 |  |  |  |
 | GET | `/phases/{id}/draft` | 200 |  | `object` |  |
@@ -143,7 +146,7 @@ Live document: `GET /api/v1/openapi.json` (when enabled). 119 operations.
 | PUT | `/projects/{id}/lead` | 204 | `LeadDto` |  |  |
 | PUT | `/projects/{id}/successor` | 204 | `SuccessorDto` |  |  |
 | POST | `/projects/{id}/supervisors` | 204 | `CoSupervisorDto` |  |  |
-| DELETE | `/projects/{id}/supervisors/{userId}` | 204 | `ReasonDto` |  |  |
+| DELETE | `/projects/{id}/supervisors/{userId}` | 204 | `OptionalReasonDto` |  |  |
 
 ## insights
 
@@ -172,7 +175,7 @@ Live document: `GET /api/v1/openapi.json` (when enabled). 119 operations.
 | GET | `/integrations/google-drive` | 200 |  | `DriveConnection` |  |
 | DELETE | `/integrations/google-drive` | 204 |  |  |  |
 | PATCH | `/integrations/google-drive` | 204 | `FolderDto` |  |  |
-| POST | `/integrations/google-drive/connect` | 200 |  |  |  |
+| POST | `/integrations/google-drive/connect` | 200 |  | `object` |  |
 
 ## admin
 

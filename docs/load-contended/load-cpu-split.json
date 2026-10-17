@@ -1,0 +1,16 @@
+{
+  "logicalCpus": 8,
+  "reqPerSec": 51,
+  "seconds": 15,
+  "cpuSecondsUsed": {
+    "apiProcess": 21.9,
+    "postgres": 14.9,
+    "loadGenerator": 1.1
+  },
+  "cpuCoresBusy": {
+    "apiProcess": 1.46,
+    "postgres": 0.99,
+    "loadGenerator": 0.07,
+    "total": 2.52
+  }
+}
