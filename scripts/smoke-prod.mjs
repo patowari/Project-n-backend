@@ -5,6 +5,18 @@ import { randomBytes } from 'node:crypto'
 import { startPg } from './pg-embedded.mjs'
 import { bootstrapDb } from './db-bootstrap.mjs'
 
+import { existsSync, renameSync } from 'node:fs'
+
+// Prisma's client loads backend/.env into every process it runs in, which would leak development
+// values (COOKIE_SECURE=false, ...) into this production-mode test. Hide the file while it runs.
+const dotenv = '.env'
+const hidden = '.env.smoke-hidden'
+const hide = existsSync(dotenv) && !existsSync(hidden)
+if (hide) renameSync(dotenv, hidden)
+const restore = () => { if (hide && existsSync(hidden) && !existsSync(dotenv)) renameSync(hidden, dotenv) }
+process.on('exit', restore)
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130))
+
 const port = 54380
 const API = 8021
 const pg = await startPg({ name: 'smoke', port })
@@ -73,7 +85,7 @@ try {
   check('in-process worker (INLINE_WORKER) delivered the e-mail job', done)
   const login = await fetch(`${base}/api/v1/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'correct-horse-battery-9' }) })
   const cookie = login.headers.get('set-cookie') ?? ''
-  check('login sets a Secure httpOnly SameSite=Lax refresh cookie', login.ok && /pn_refresh=/.test(cookie) && /Secure/i.test(cookie) && /HttpOnly/i.test(cookie) && /SameSite=Lax/i.test(cookie))
+  check('login sets a Secure httpOnly SameSite=Lax refresh cookie', login.ok && /pn_refresh=/.test(cookie) && /Secure/i.test(cookie) && /HttpOnly/i.test(cookie) && /SameSite=Lax/i.test(cookie), `status=${login.status} cookie=${cookie.replace(/=[^;]*/, '=…')}`)
   api.kill()
 
   // 5. the standalone worker drains and exits
