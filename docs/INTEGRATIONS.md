@@ -7,7 +7,7 @@ Each integration sits behind a **port** with two adapters. Development, tests an
 | `DrivePort` | `GoogleDriveGateway` (Drive v3 over HTTPS, `drive.file` scope) | `FakeDriveGateway` (in memory, behaves like Drive for folders, resumable sessions, revoked tokens) | `DRIVE_DRIVER=google\|fake` | **No** (no credentials available) |
 | `IdentityPort` | `GoogleIdentityGateway` (OpenID Connect, `openid email profile`) | `FakeIdentityGateway` (the code carries the identity, so tests can play any Google account) | `DRIVE_DRIVER=google\|fake` (same switch, same OAuth client) | **No** (no credentials available) |
 | `AiPort` | `GeminiAi` (REST, JSON schema output) | `FakeAi` (deterministic) | `AI_DRIVER=gemini\|fake` | **No** |
-| `MailerPort` | `ResendMailer` | `LogMailer` (captures messages) | `MAIL_DRIVER=resend\|log` | **No** |
+| `MailerPort` | `ResendMailer`, `SmtpMailer` (nodemailer, always TLS) | `LogMailer` (captures messages) | `MAIL_DRIVER=resend\|smtp\|log` | **No** |
 | Rust helper | `pn-doc-tools` | — | `DOC_TOOLS_BIN` | **Yes** (used by the AI tests) |
 
 Because the real adapters were written against the providers' documented APIs but never run here, treat each one as **unverified until its checklist below is done once in a staging environment.**
@@ -91,6 +91,14 @@ Rules (all tested against the fake provider, `test/google-auth.e2e-spec.ts`):
 **Not implemented:** bounce/complaint webhooks to mark addresses undeliverable; provider daily-cap awareness for bulk invites (invites are queued and drain at worker pace).
 
 **Verification checklist:** [ ] a verification mail arrives and its link works; [ ] a 5xx/429 is retried (turn the key off briefly); [ ] a rejected recipient (4xx) ends the job as dead, visible under Admin → Failed jobs.
+
+## SMTP (e-mail from your own mail server)
+
+* Set `MAIL_DRIVER=smtp`, `SMTP_HOST`, `SMTP_PORT` (587 = STARTTLS, 465 with `SMTP_SECURE=true`), `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM`. The API refuses to start in production if host, user or password is missing.
+* TLS is always required and the certificate is verified. `SMTP_TLS_REJECT_UNAUTHORIZED=false` exists only for a self-signed certificate on a server you control.
+* `EMAIL_FROM` should be the authenticated mailbox (or an address the server lets it send as).
+* 5xx replies (unknown mailbox, policy rejection) end the job as dead and are visible under Admin → Failed jobs; 4xx replies and network or TLS errors are retried. SMTP has no idempotency key, so the Message-ID is derived from the job's key instead.
+* Deliverability is your responsibility: SPF, DKIM, DMARC, reverse DNS for the server's IP, and an open outbound port (many hosts block port 25 and sometimes 587 until asked).
 
 ## Rust helper
 

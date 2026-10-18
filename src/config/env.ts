@@ -22,8 +22,9 @@ export interface Env {
   cookieSecure: boolean
   cookieDomain: string | undefined
   cronSecret: string
-  mailDriver: 'log' | 'resend'
+  mailDriver: 'log' | 'resend' | 'smtp'
   resendApiKey: string | null
+  smtp: { host: string | null; port: number; user: string | null; pass: string | null; secure: boolean; rejectUnauthorized: boolean }
   emailFrom: string
   driveDriver: 'fake' | 'google'
   googleClientId: string | null
@@ -90,6 +91,16 @@ export function loadEnv(): Env {
     cronSecret: str('CRON_SECRET', isProd ? undefined : 'dev-cron-secret'),
     mailDriver: (process.env.MAIL_DRIVER as Env['mailDriver']) ?? (isProd ? 'resend' : 'log'),
     resendApiKey: opt('RESEND_API_KEY'),
+    smtp: {
+      host: opt('SMTP_HOST'),
+      port: int('SMTP_PORT', 587),
+      user: opt('SMTP_USER'),
+      pass: opt('SMTP_PASS'),
+      // true = implicit TLS (port 465); false = STARTTLS upgrade (port 587), which is required either way
+      secure: bool('SMTP_SECURE', false),
+      // only turn this off for a self-signed certificate on a mail server you control
+      rejectUnauthorized: bool('SMTP_TLS_REJECT_UNAUTHORIZED', true),
+    },
     emailFrom: str('EMAIL_FROM', 'Project N <no-reply@localhost>'),
     driveDriver: (process.env.DRIVE_DRIVER as Env['driveDriver']) ?? (isProd ? 'google' : 'fake'),
     googleClientId: opt('GOOGLE_OAUTH_CLIENT_ID'),
@@ -117,6 +128,7 @@ export function loadEnv(): Env {
     }
     if (env.corsOrigins.some((o) => /localhost|127\.0\.0\.1/.test(o))) throw new Error('CORS_ORIGINS must not contain localhost in production')
     if (env.mailDriver === 'resend' && !env.resendApiKey) throw new Error('RESEND_API_KEY is required')
+    if (env.mailDriver === 'smtp' && (!env.smtp.host || !env.smtp.user || !env.smtp.pass)) throw new Error('SMTP_HOST, SMTP_USER and SMTP_PASS are required when MAIL_DRIVER=smtp')
     if (env.driveDriver === 'google' && (!env.googleClientId || !env.googleClientSecret))
       throw new Error('GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET are required')
     if (env.aiDriver === 'gemini' && !env.geminiApiKey) throw new Error('GEMINI_API_KEY is required')
